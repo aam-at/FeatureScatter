@@ -81,6 +81,8 @@ parser.add_argument('--weight_decay',
                     help='weight decay')
 parser.add_argument('--log_step', default=10, type=int, help='log_step')
 
+parser.add_argument('--model', type=str, default='preactresnet18', help='model name', choices=['wrn28_10', 'preactresnet18'])
+
 # number of classes and image size will be updated below based on the dataset
 parser.add_argument('--num_classes', default=10, type=int, help='num classes')
 parser.add_argument('--image_size', default=32, type=int, help='image size')
@@ -171,10 +173,13 @@ trainloader = torch.utils.data.DataLoader(trainset,
 print('==> Building model..')
 
 if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 'svhn':
-    print('---wide resenet-----')
-    basic_net = WideResNet(depth=28,
-                           num_classes=args.num_classes,
-                           widen_factor=10)
+    print(args.model)
+    if args.model == 'wrn28_10':
+        basic_net = WideResNet(depth=28,
+                               num_classes=args.num_classes,
+                               widen_factor=10)
+    elif args.model == 'preactresnet18':
+        basic_net = preactresnet18(num_classes=args.num_classes)
 
 
 def print_para(net):
