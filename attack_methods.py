@@ -4,8 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models import *
-from torch.autograd.gradcheck import zero_gradients
-from torch.autograd import Variable
+from torch.autograd import Variable, grad
 import utils
 import math
 
@@ -16,6 +15,10 @@ import pickle
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+def to_var(x, requires_grad=True):
+    if torch.cuda.is_available():
+        x = x.cuda()
+    return Variable(x, requires_grad=requires_grad)
 
 class Attack_None(nn.Module):
     def __init__(self, basic_net, config):
@@ -185,16 +188,13 @@ class Attack_FeaScatter(nn.Module):
 
         for i in range(iter_num):
             x.requires_grad_()
-            zero_gradients(x)
             if x.grad is not None:
-                x.grad.data.fill_(0)
-
+                x.grad.detach_()
+                x.grad.data.zero_()
             logits_pred, fea = aux_net(x)
-
             ot_loss = ot.sinkhorn_loss_joint_IPOT(1, 0.00, logits_pred_nat,
                                                   logits_pred, None, None,
                                                   0.01, m, n)
-
             aux_net.zero_grad()
             adv_loss = ot_loss
             adv_loss.backward(retain_graph=True)

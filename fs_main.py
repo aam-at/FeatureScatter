@@ -11,7 +11,6 @@ import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
 
-from torch.autograd.gradcheck import zero_gradients
 import copy
 from torch.autograd import Variable
 from PIL import Image

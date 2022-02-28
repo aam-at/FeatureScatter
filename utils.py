@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 import numpy as np
 import random
@@ -83,3 +84,28 @@ class CWLoss(nn.Module):
             loss = loss / sample_num
 
         return loss
+
+
+def mixup_process(out, target_reweighted, lam):
+    indices = np.random.permutation(out.size(0))
+    out = out * lam + out[indices] * (1 - lam)
+    target_shuffled_onehot = target_reweighted[indices]
+    target_reweighted = target_reweighted * \
+        lam + target_shuffled_onehot * (1 - lam)
+    return out, target_reweighted
+
+
+def get_lambda(alpha=1.0):
+    '''Return lambda'''
+    if alpha > 0.:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.
+    return lam
+
+
+def to_one_hot(inp, num_classes):
+    y_onehot = torch.FloatTensor(inp.size(0), num_classes)
+    y_onehot.zero_()
+    y_onehot.scatter_(1, inp.unsqueeze(1).data.cpu(), 1)
+    return Variable(y_onehot.to(inp.device),requires_grad=False)
