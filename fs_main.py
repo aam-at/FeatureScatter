@@ -81,6 +81,8 @@ parser.add_argument('--weight_decay',
 parser.add_argument('--log_step', default=10, type=int, help='log_step')
 
 parser.add_argument('--model', type=str, default='preactresnet18', help='model name', choices=['wrn28_10', 'preactresnet18'])
+parser.add_argument('--train',type=str, default='standard', choices=['standard', 'mixup', 'mixup_hidden'])
+parser.add_argument('--mixup_alpha', type=float, default=0.0, help='alpha parameter for mixup')
 
 # number of classes and image size will be updated below based on the dataset
 parser.add_argument('--num_classes', default=10, type=int, help='num classes')
@@ -266,6 +268,13 @@ def train_fun(epoch, net):
         acc = 1.0 * correct / total
         return acc
 
+    mixup = False
+    mixup_hidden = False
+    if args.train == 'mixup':
+        mixup = True
+    elif args.train == 'mixup_hidden':
+        mixup_hidden = True
+
     iterator = tqdm(trainloader, ncols=0, leave=False)
     for batch_idx, (inputs, targets) in enumerate(iterator):
         start_time = time.time()
@@ -276,7 +285,7 @@ def train_fun(epoch, net):
         optimizer.zero_grad()
 
         # forward
-        outputs, loss_fs = net(inputs.detach(), targets)
+        outputs, loss_fs = net(inputs.detach(), targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
 
         optimizer.zero_grad()
         loss = loss_fs.mean()
