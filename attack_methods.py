@@ -142,6 +142,9 @@ class Attack_FeaScatter(nn.Module):
                 inputs,
                 targets,
                 attack=True,
+                mixup=False,
+                mixup_hidden=False,
+                mixup_alpha=None,
                 targeted_label=-1,
                 batch_idx=0):
 
@@ -183,6 +186,8 @@ class Attack_FeaScatter(nn.Module):
         y_gt = one_hot_tensor(targets, num_classes, device)
 
         loss_ce = softCrossEntropy()
+        bce_loss = nn.BCELoss().cuda()
+        softmax = nn.Softmax(dim=1).cuda()
 
         iter_num = self.num_steps
 
@@ -204,6 +209,16 @@ class Attack_FeaScatter(nn.Module):
             x_adv = torch.clamp(x_adv, -1.0, 1.0)
             x = Variable(x_adv)
 
+        if mixup or mixup_hidden:
+            logits_pred_nat, targets_reweighted, fea = self.basic_net(inputs, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=mixup_alpha)
+            loss_nat = bce_loss(softmax(logits_pred_nat), targets_reweighted)
+            loss_nat = loss_ce(logits_pred_nat, targets_reweighted)
+            logits_pred, targets_reweighted, fea = self.basic_net(x, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=mixup_alpha)
+            loss_adv = bce_loss(softmax(logits_pred), targets_reweighted)
+            loss_adv = loss_ce(logits_pred, targets_reweighted)
+            loss = (loss_nat + loss_adv) / 2
+            return logits_pred, loss
+        else:
             logits_pred, fea = self.basic_net(x)
             self.basic_net.zero_grad()
 
@@ -211,4 +226,4 @@ class Attack_FeaScatter(nn.Module):
 
             adv_loss = loss_ce(logits_pred, y_sm.detach())
 
-        return logits_pred, adv_loss
+            return logits_pred, adv_loss
