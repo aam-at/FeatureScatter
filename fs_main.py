@@ -44,7 +44,7 @@ parser.add_argument('--adv_mode',
                     default='feature_scatter',
                     type=str,
                     help='adv_mode (feature_scatter)')
-parser.add_argument('--model_dir', type=str, help='model path')
+parser.add_argument('--root_dir', type=str, help='folder to store results')
 parser.add_argument('--init_model_pass',
                     default='-1',
                     type=str,
@@ -83,12 +83,15 @@ parser.add_argument('--log_step', default=10, type=int, help='log_step')
 parser.add_argument('--model', type=str, default='preactresnet18', help='model name', choices=['wrn28_10', 'preactresnet18'])
 parser.add_argument('--train',type=str, default='standard', choices=['standard', 'lamb', 'mixup', 'mixup_hidden'])
 parser.add_argument('--mixup_alpha', type=float, default=0.0, help='alpha parameter for mixup')
+parser.add_argument('--ls-factor', type=float, default=0.0, help='label smoothing factor')
+parser.add_argument('--random-start', type=bool, action='store_true', help='random start for the attack')
 
 # number of classes and image size will be updated below based on the dataset
 parser.add_argument('--num_classes', default=10, type=int, help='num classes')
 parser.add_argument('--image_size', default=32, type=int, help='image size')
 parser.add_argument('--dataset', default='cifar10', type=str,
                     help='dataset')  # concat cascade
+parser.add_argument('--job_id', type=str, default='')
 
 args = parser.parse_args()
 
@@ -176,11 +179,9 @@ print('==> Building model..')
 if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 'svhn':
     print(args.model)
     if args.model == 'wrn28_10':
-        net = WideResNet(depth=28,
-                               num_classes=args.num_classes,
-                               widen_factor=10)
+        net = wrn28_10(num_classes=args.num_classes, widen_factor=10, per_img_std=True)
     elif args.model == 'preactresnet18':
-        net = preactresnet18(num_classes=args.num_classes)
+        net = preactresnet18(num_classes=args.num_classes, per_img_std=True)
 
 
 def print_para(net):
@@ -196,10 +197,10 @@ net = net.to(device)
 # config for feature scatter
 config_feature_scatter = {
     'train': True,
-    'epsilon': 8.0 / 255 * 2,
+    'epsilon': 8.0 / 255,
     'num_steps': 1,
-    'step_size': 8.0 / 255 * 2,
-    'random_start': True,
+    'step_size': 8.0 / 255,
+    'random_start': args.random_start,
     'clip_min': 0.0,
     'clip_max': 1.0
 }
@@ -214,6 +215,20 @@ else:
 if device == 'cuda':
     net = torch.nn.DataParallel(net)
     cudnn.benchmark = True
+
+exp_name = args.dataset
+exp_name += "_arch_" + str(args.model)
+exp_name += '_train_'+str(args.train)
+if args.train in ['mixup', 'mixup_hidden']:
+    exp_name += '_a_'+ str(args.mixup_alpha)
+exp_name += '_adv_mode_'+str(args.adv_mode)
+if args.random_start:
+    exp_name += '_rs_'
+exp_name += '_ls_'+str(args.ls_factor)
+if args.job_id != None:
+    exp_name += '_job_id_'+str(args.job_id)
+print(exp_name)
+args.model_dir = os.path.join(args.root_dir, exp_name)
 
 optimizer = optim.SGD(net.parameters(),
                       lr=args.lr,
