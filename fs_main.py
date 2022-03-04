@@ -76,7 +76,7 @@ parser.add_argument('--momentum',
                     type=float,
                     help='momentum (1-tf.momentum)')
 parser.add_argument('--weight_decay',
-                    default=2e-4,
+                    default=1e-4,
                     type=float,
                     help='weight decay')
 parser.add_argument('--log_step', default=10, type=int, help='log_step')
