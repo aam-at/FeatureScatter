@@ -44,6 +44,7 @@ parser.add_argument('--adv_mode',
                     default='feature_scatter',
                     type=str,
                     help='adv_mode (feature_scatter)')
+parser.add_argument('--data_dir', type=str, help='path where to store the data')
 parser.add_argument('--root_dir', type=str, help='folder to store results')
 parser.add_argument('--init_model_pass',
                     default='-1',
@@ -162,32 +163,32 @@ elif args.dataset == 'svhn':
     ])
 
 if args.dataset == 'cifar10':
-    trainset = torchvision.datasets.CIFAR10(root='./data',
+    trainset = torchvision.datasets.CIFAR10(root=args.data_dir,
                                             train=True,
                                             download=True,
                                             transform=transform_train)
-    testset = torchvision.datasets.CIFAR10(root='./data',
+    testset = torchvision.datasets.CIFAR10(root=args.data_dir,
                                            train=False,
                                            download=True,
                                            transform=transform_test)
     classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse',
                'ship', 'truck')
 elif args.dataset == 'cifar100':
-    trainset = torchvision.datasets.CIFAR100(root='./data',
+    trainset = torchvision.datasets.CIFAR100(root=args.data_dir,
                                              train=True,
                                              download=True,
                                              transform=transform_train)
-    testset = torchvision.datasets.CIFAR100(root='./data',
+    testset = torchvision.datasets.CIFAR100(root=args.data_dir,
                                             train=False,
                                             download=True,
                                             transform=transform_test)
 
 elif args.dataset == 'svhn':
-    trainset = torchvision.datasets.SVHN(root='./data',
+    trainset = torchvision.datasets.SVHN(root=args.data_dir,
                                          split='train',
                                          download=True,
                                          transform=transform_train)
-    testset = torchvision.datasets.SVHN(root='./data',
+    testset = torchvision.datasets.SVHN(root=args.data_dir,
                                         split='test',
                                         download=True,
                                         transform=transform_test)
