@@ -23,18 +23,11 @@ def to_var(x, requires_grad=True):
 class Attack_None(nn.Module):
     def __init__(self, basic_net, config):
         super(Attack_None, self).__init__()
-        self.train_flag = True if 'train' not in config.keys(
-        ) else config['train']
         self.basic_net = basic_net
         print(config)
 
     def forward(self, inputs, targets, attack=None, batch_idx=-1):
-        if self.train_flag:
-            self.basic_net.train()
-        else:
-            self.basic_net.eval()
-        outputs, _ = self.basic_net(inputs)
-        return outputs, None
+        return inputs
 
 
 class Attack_PGD(nn.Module):
@@ -50,11 +43,10 @@ class Attack_PGD(nn.Module):
         self.loss_func = torch.nn.CrossEntropyLoss(
             reduction='none') if 'loss_func' not in config.keys(
             ) else config['loss_func']
-        self.train_flag = True if 'train' not in config.keys(
-        ) else config['train']
-
         self.box_type = 'white' if 'box_type' not in config.keys(
         ) else config['box_type']
+        self.clip_min = config['clip_min']
+        self.clip_max = config['clip_max']
 
         print(config)
 
@@ -66,8 +58,7 @@ class Attack_PGD(nn.Module):
                 batch_idx=0):
 
         if not attack:
-            outputs = self.basic_net(inputs)[0]
-            return outputs, None
+            return inputs
 
         if self.box_type == 'white':
             aux_net = pickle.loads(pickle.dumps(self.basic_net))
@@ -86,16 +77,14 @@ class Attack_PGD(nn.Module):
         step_sign = 1.0
 
         x = inputs.detach()
+        x_org = x.detach()
         if self.rand:
             x = x + torch.zeros_like(x).uniform_(-self.epsilon, self.epsilon)
-        x_org = x.detach()
-        loss_array = np.zeros((inputs.size(0), self.num_steps))
-
         for i in range(self.num_steps):
             x.requires_grad_()
-            zero_gradients(x)
             if x.grad is not None:
-                x.grad.data.fill_(0)
+                x.grad.detach_()
+                x.grad.data.zero_()
             aux_net.eval()
             logits = aux_net(x)[0]
             loss = self.loss_func(logits, y_tensor_adv)
@@ -107,17 +96,10 @@ class Attack_PGD(nn.Module):
                 x.grad.data)
             x_adv = torch.min(torch.max(x_adv, inputs - self.epsilon),
                               inputs + self.epsilon)
-            x_adv = torch.clamp(x_adv, -1.0, 1.0)
+            x_adv = torch.clamp(x_adv, self.clip_min, self.clip_max)
             x = Variable(x_adv)
 
-        if self.train_flag:
-            self.basic_net.train()
-        else:
-            self.basic_net.eval()
-
-        logits_pert = self.basic_net(x.detach())[0]
-
-        return logits_pert, targets_prob.detach()
+        return x.detach()
 
 
 class Attack_FeaScatter(nn.Module):
@@ -129,8 +111,6 @@ class Attack_FeaScatter(nn.Module):
         self.step_size = config['step_size']
         self.epsilon = config['epsilon']
         self.num_steps = config['num_steps']
-        self.train_flag = True if 'train' not in config.keys(
-        ) else config['train']
         self.box_type = 'white' if 'box_type' not in config.keys(
         ) else config['box_type']
         self.ls_factor = 0.1 if 'ls_factor' not in config.keys(
@@ -142,15 +122,11 @@ class Attack_FeaScatter(nn.Module):
                 inputs,
                 targets,
                 attack=True,
-                mixup=False,
-                mixup_hidden=False,
-                mixup_alpha=None,
                 targeted_label=-1,
                 batch_idx=0):
 
         if not attack:
-            outputs, _ = self.basic_net(inputs)
-            return outputs, None
+            return inputs
         if self.box_type == 'white':
             aux_net = pickle.loads(pickle.dumps(self.basic_net))
         elif self.box_type == 'black':
@@ -171,27 +147,12 @@ class Attack_FeaScatter(nn.Module):
         step_sign = 1.0
 
         x = inputs.detach()
-
         x_org = x.detach()
-        x = x + torch.zeros_like(x).uniform_(-self.epsilon, self.epsilon)
-
-        if self.train_flag:
-            self.basic_net.train()
-        else:
-            self.basic_net.eval()
+        if self.rand:
+            x = x + torch.zeros_like(x).uniform_(-self.epsilon, self.epsilon)
 
         logits_pred_nat, fea_nat = aux_net(inputs)
-
-        num_classes = logits_pred_nat.size(1)
-        y_gt = one_hot_tensor(targets, num_classes, device)
-
-        loss_ce = softCrossEntropy()
-        bce_loss = nn.BCELoss().cuda()
-        softmax = nn.Softmax(dim=1).cuda()
-
-        iter_num = self.num_steps
-
-        for i in range(iter_num):
+        for i in range(self.num_steps):
             x.requires_grad_()
             if x.grad is not None:
                 x.grad.detach_()
@@ -203,27 +164,9 @@ class Attack_FeaScatter(nn.Module):
             aux_net.zero_grad()
             adv_loss = ot_loss
             adv_loss.backward(retain_graph=True)
-            x_adv = x.data + self.step_size * torch.sign(x.grad.data)
+            x_adv = x.data + step_sign * self.step_size * torch.sign(x.grad.data)
             x_adv = torch.min(torch.max(x_adv, inputs - self.epsilon),
                               inputs + self.epsilon)
-            x_adv = torch.clamp(x_adv, -1.0, 1.0)
+            x_adv = torch.clamp(x_adv, self.clip_min, self.clip_max)
             x = Variable(x_adv)
-
-        if mixup or mixup_hidden:
-            logits_pred_nat, targets_reweighted, fea = self.basic_net(inputs, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=mixup_alpha)
-            loss_nat = bce_loss(softmax(logits_pred_nat), targets_reweighted)
-            loss_nat = loss_ce(logits_pred_nat, targets_reweighted)
-            logits_pred, targets_reweighted, fea = self.basic_net(x, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=mixup_alpha)
-            loss_adv = bce_loss(softmax(logits_pred), targets_reweighted)
-            loss_adv = loss_ce(logits_pred, targets_reweighted)
-            loss = (loss_nat + loss_adv) / 2
-            return logits_pred, loss
-        else:
-            logits_pred, fea = self.basic_net(x)
-            self.basic_net.zero_grad()
-
-            y_sm = utils.label_smoothing(y_gt, y_gt.size(1), self.ls_factor)
-
-            adv_loss = loss_ce(logits_pred, y_sm.detach())
-
-            return logits_pred, adv_loss
+        return x.detach()
