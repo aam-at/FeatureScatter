@@ -115,7 +115,7 @@ if args.job_id != None:
 args.model_dir = os.path.join(args.root_dir, exp_name)
 if not os.path.exists(args.model_dir):
         os.makedirs(args.model_dir)
-log = open(os.path.join(args.model_dir, 'log.txt'.format(args.manualSeed)), 'w')
+log = open(os.path.join(args.model_dir, 'log.txt'), 'w')
 print(exp_name)
 
 if args.dataset == 'cifar10':
