@@ -81,7 +81,7 @@ parser.add_argument('--weight_decay',
 parser.add_argument('--log_step', default=10, type=int, help='log_step')
 
 parser.add_argument('--model', type=str, default='preactresnet18', help='model name', choices=['wrn28_10', 'preactresnet18'])
-parser.add_argument('--train',type=str, default='standard', choices=['standard', 'mixup', 'mixup_hidden'])
+parser.add_argument('--train',type=str, default='standard', choices=['standard', 'lamb', 'mixup', 'mixup_hidden'])
 parser.add_argument('--mixup_alpha', type=float, default=0.0, help='alpha parameter for mixup')
 
 # number of classes and image size will be updated below based on the dataset
@@ -176,11 +176,11 @@ print('==> Building model..')
 if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 'svhn':
     print(args.model)
     if args.model == 'wrn28_10':
-        basic_net = WideResNet(depth=28,
+        net = WideResNet(depth=28,
                                num_classes=args.num_classes,
                                widen_factor=10)
     elif args.model == 'preactresnet18':
-        basic_net = preactresnet18(num_classes=args.num_classes)
+        net = preactresnet18(num_classes=args.num_classes)
 
 
 def print_para(net):
@@ -191,7 +191,7 @@ def print_para(net):
         break
 
 
-basic_net = basic_net.to(device)
+net = net.to(device)
 
 # config for feature scatter
 config_feature_scatter = {
@@ -200,12 +200,13 @@ config_feature_scatter = {
     'num_steps': 1,
     'step_size': 8.0 / 255 * 2,
     'random_start': True,
-    'ls_factor': 0.5,
+    'clip_min': 0.0,
+    'clip_max': 1.0
 }
 
 if args.adv_mode.lower() == 'feature_scatter':
     print('-----Feature Scatter mode -----')
-    net = Attack_FeaScatter(basic_net, config_feature_scatter)
+    attack = Attack_FeaScatter(net, config_feature_scatter)
 else:
     print('-----OTHER_ALGO mode -----')
     raise NotImplementedError("Please implement this algorithm first!")
@@ -276,6 +277,7 @@ def train_fun(epoch, net):
         mixup_hidden = True
 
     iterator = tqdm(trainloader, ncols=0, leave=False)
+    loss_ce = softCrossEntropy()
     for batch_idx, (inputs, targets) in enumerate(iterator):
         start_time = time.time()
         inputs, targets = inputs.to(device), targets.to(device)
@@ -284,11 +286,26 @@ def train_fun(epoch, net):
 
         optimizer.zero_grad()
 
+        # attack
+        inputs_adv = attack(inputs, targets)
         # forward
-        outputs, loss_fs = net(inputs.detach(), targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
+        outputs, targets_reweighted = net(inputs, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
+        if args.ls_factor > 0.0:
+            targets_reweighted = utils.label_smoothing(targets_reweighted, targets_reweighted.size(1), args.ls_factor)
+        outputs_adv, targets_reweighted2 = net(inputs, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
+        if args.ls_factor > 0.0:
+            targets_reweighted2 = utils.label_smoothing(targets_reweighted2, targets_reweighted2.size(1), args.ls_factor)
+
+        if args.train == 'standard':
+            adv_loss = loss_ce(outputs_adv, targets_reweighted2.detach())
+            loss = adv_loss
+        elif args.train in ['lamb', 'mixup', 'mixup_hidden']:
+            nat_loss = loss_ce(outputs, targets_reweighted.detach())
+            adv_loss = loss_ce(outputs_adv, targets_reweighted2.detach())
+            loss = (nat_loss + adv_loss) / 2.0
 
         optimizer.zero_grad()
-        loss = loss_fs.mean()
+        loss = loss.mean()
         loss.backward()
 
         optimizer.step()

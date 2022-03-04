@@ -115,7 +115,7 @@ class Wide_ResNet(nn.Module):
 
         out = x
 
-        if mixup_alpha is not None:
+        if mixup_alpha is not None and mixup_alpha > 0.0:
             lam = get_lambda(mixup_alpha)
             lam = torch.from_numpy(np.array([lam]).astype("float32")).cuda()
             lam = Variable(lam)
