@@ -17,6 +17,7 @@ import scipy.io
 
 import torch
 
+
 def one_hot_tensor(y_batch_tensor, num_classes, device):
     y_tensor = torch.cuda.FloatTensor(y_batch_tensor.size(0),
                                       num_classes).fill_(0)
@@ -108,4 +109,16 @@ def to_one_hot(inp, num_classes):
     y_onehot = torch.FloatTensor(inp.size(0), num_classes)
     y_onehot.zero_()
     y_onehot.scatter_(1, inp.unsqueeze(1).data.cpu(), 1)
-    return Variable(y_onehot.to(inp.device),requires_grad=False)
+    return Variable(y_onehot.to(inp.device), requires_grad=False)
+
+
+def per_image_standardization(x):
+    y = x.view(-1, x.shape[1] * x.shape[2] * x.shape[3])
+    mean = y.mean(dim=1, keepdim=True).expand_as(y)
+    std = y.std(dim=1, keepdim=True).expand_as(y)
+    adjusted_std = torch.max(
+        std, 1.0 / torch.sqrt(
+            torch.cuda.FloatTensor([x.shape[1] * x.shape[2] * x.shape[3]])))
+    y = (y - mean) / adjusted_std
+    standarized_input = y.view(x.shape[0], x.shape[1], x.shape[2], x.shape[3])
+    return standarized_input
