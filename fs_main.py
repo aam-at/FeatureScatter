@@ -95,16 +95,37 @@ parser.add_argument('--job_id', type=str, default='')
 
 args = parser.parse_args()
 
+
+def print_log(print_string, log):
+    print("{}".format(print_string))
+    log.write('{}\n'.format(print_string))
+    log.flush()
+
+exp_name = args.dataset
+exp_name += "_arch_" + str(args.model)
+exp_name += '_train_'+str(args.train)
+if args.train in ['mixup', 'mixup_hidden']:
+    exp_name += '_a_'+ str(args.mixup_alpha)
+exp_name += '_adv_mode_'+str(args.adv_mode)
+if args.random_start:
+    exp_name += '_rs_'
+exp_name += '_ls_'+str(args.ls_factor)
+if args.job_id != None:
+    exp_name += '_job_id_'+str(args.job_id)
+args.model_dir = os.path.join(args.root_dir, exp_name)
+log = open(os.path.join(args.model_dir, 'log.txt'.format(args.manualSeed)), 'w')
+print(exp_name)
+
 if args.dataset == 'cifar10':
-    print('------------cifar10---------')
+    print_log('------------cifar10---------', log)
     args.num_classes = 10
     args.image_size = 32
 elif args.dataset == 'cifar100':
-    print('----------cifar100---------')
+    print_log('----------cifar100---------', log)
     args.num_classes = 100
     args.image_size = 32
 if args.dataset == 'svhn':
-    print('------------svhn10---------')
+    print_log('------------svhn10---------', log)
     args.num_classes = 10
     args.image_size = 32
 
@@ -112,7 +133,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 start_epoch = 0
 
 # Data
-print('==> Preparing data..')
+print_log('==> Preparing data..', log)
 
 if args.dataset == 'cifar10' or args.dataset == 'cifar100':
     transform_train = transforms.Compose([
@@ -174,22 +195,14 @@ trainloader = torch.utils.data.DataLoader(trainset,
                                           shuffle=True,
                                           num_workers=2)
 
-print('==> Building model..')
+print_log('==> Building model..', log)
 
 if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 'svhn':
-    print(args.model)
+    print_log(args.model, log)
     if args.model == 'wrn28_10':
         net = wrn28_10(num_classes=args.num_classes, widen_factor=10, per_img_std=True)
     elif args.model == 'preactresnet18':
         net = preactresnet18(num_classes=args.num_classes, per_img_std=True)
-
-
-def print_para(net):
-    for name, param in net.named_parameters():
-        if param.requires_grad:
-            print(name)
-            print(param.data)
-        break
 
 
 net = net.to(device)
@@ -206,29 +219,15 @@ config_feature_scatter = {
 }
 
 if args.adv_mode.lower() == 'feature_scatter':
-    print('-----Feature Scatter mode -----')
+    print_log('-----Feature Scatter mode -----', log)
     attack = Attack_FeaScatter(net, config_feature_scatter)
 else:
-    print('-----OTHER_ALGO mode -----')
+    print_log('-----OTHER_ALGO mode -----', log)
     raise NotImplementedError("Please implement this algorithm first!")
 
 if device == 'cuda':
     net = torch.nn.DataParallel(net)
     cudnn.benchmark = True
-
-exp_name = args.dataset
-exp_name += "_arch_" + str(args.model)
-exp_name += '_train_'+str(args.train)
-if args.train in ['mixup', 'mixup_hidden']:
-    exp_name += '_a_'+ str(args.mixup_alpha)
-exp_name += '_adv_mode_'+str(args.adv_mode)
-if args.random_start:
-    exp_name += '_rs_'
-exp_name += '_ls_'+str(args.ls_factor)
-if args.job_id != None:
-    exp_name += '_job_id_'+str(args.job_id)
-print(exp_name)
-args.model_dir = os.path.join(args.root_dir, exp_name)
 
 optimizer = optim.SGD(net.parameters(),
                       lr=args.lr,
@@ -237,30 +236,30 @@ optimizer = optim.SGD(net.parameters(),
 
 if args.resume and args.init_model_pass != '-1':
     # Load checkpoint.
-    print('==> Resuming from checkpoint..')
+    print_log('==> Resuming from checkpoint..', log)
     f_path_latest = os.path.join(args.model_dir, 'latest')
     f_path = os.path.join(args.model_dir,
                           ('checkpoint-%s' % args.init_model_pass))
     if not os.path.isdir(args.model_dir):
-        print('train from scratch: no checkpoint directory or file found')
+        print_log('train from scratch: no checkpoint directory or file found', log)
     elif args.init_model_pass == 'latest' and os.path.isfile(f_path_latest):
         checkpoint = torch.load(f_path_latest)
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch'] + 1
-        print('resuming from epoch %s in latest' % start_epoch)
+        print_log('resuming from epoch %s in latest' % start_epoch, log)
     elif os.path.isfile(f_path):
         checkpoint = torch.load(f_path)
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch'] + 1
-        print('resuming from epoch %s' % (start_epoch - 1))
+        print_log('resuming from epoch %s' % (start_epoch - 1), log)
     elif not os.path.isfile(f_path) or not os.path.isfile(f_path_latest):
-        print('train from scratch: no checkpoint directory or file found')
+        print_log('train from scratch: no checkpoint directory or file found', log)
 
 soft_xent_loss = softCrossEntropy()
 
 
 def train_fun(epoch, net):
-    print('\nEpoch: %d' % epoch)
+    print_log('\nEpoch: %d' % epoch, log)
     net.train()
 
     train_loss = 0
@@ -336,13 +335,13 @@ def train_fun(epoch, net):
             nat_outputs, _ = net(inputs, targets, attack=False)
             nat_acc = get_acc(nat_outputs, targets)
 
-            print(
+            print_log(
                 "epoch %d, step %d, lr %.4f, duration %.2f, training nat acc %.2f, training adv acc %.2f, training adv loss %.4f"
                 % (epoch, batch_idx, lr, duration, 100 * nat_acc,
-                   100 * adv_acc, train_loss))
+                   100 * adv_acc, train_loss), log)
 
     if epoch % args.save_epochs == 0 or epoch >= args.max_epoch - 2:
-        print('Saving..')
+        print_log('Saving..', log)
         f_path = os.path.join(args.model_dir, ('checkpoint-%s' % epoch))
         state = {
             'net': net.state_dict(),
@@ -353,7 +352,7 @@ def train_fun(epoch, net):
         torch.save(state, f_path)
 
     if epoch >= 0:
-        print('Saving latest @ epoch %s..' % (epoch))
+        print_log('Saving latest @ epoch %s..' % (epoch), log)
         f_path = os.path.join(args.model_dir, 'latest')
         state = {
             'net': net.state_dict(),
