@@ -212,10 +212,9 @@ net = net.to(device)
 
 # config for feature scatter
 config_feature_scatter = {
-    'train': True,
-    'epsilon': 8.0 / 255,
+    'epsilon': 8.0,
     'num_steps': 1,
-    'step_size': 8.0 / 255,
+    'step_size': 8.0,
     'random_start': args.random_start,
     'clip_min': 0.0,
     'clip_max': 255.0
@@ -331,12 +330,9 @@ def train_fun(epoch, net):
 
         duration = time.time() - start_time
         if batch_idx % args.log_step == 0:
-            if adv_acc == 0:
-                adv_acc = get_acc(outputs, targets)
+            adv_acc = get_acc(outputs_adv, targets)
             iterator.set_description(str(adv_acc))
-
-            nat_outputs, _ = net(inputs, targets, attack=False)
-            nat_acc = get_acc(nat_outputs, targets)
+            nat_acc = get_acc(outputs, targets)
 
             print_log(
                 "epoch %d, step %d, lr %.4f, duration %.2f, training nat acc %.2f, training adv acc %.2f, training adv loss %.4f"
