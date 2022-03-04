@@ -307,7 +307,7 @@ def train_fun(epoch, net):
         outputs, targets_reweighted = net(inputs, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
         if args.ls_factor > 0.0:
             targets_reweighted = utils.label_smoothing(targets_reweighted, targets_reweighted.size(1), args.ls_factor)
-        outputs_adv, targets_reweighted2 = net(inputs, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
+        outputs_adv, targets_reweighted2 = net(inputs_adv, targets, mixup=mixup, mixup_hidden=mixup_hidden, mixup_alpha=args.mixup_alpha)
         if args.ls_factor > 0.0:
             targets_reweighted2 = utils.label_smoothing(targets_reweighted2, targets_reweighted2.size(1), args.ls_factor)
 
