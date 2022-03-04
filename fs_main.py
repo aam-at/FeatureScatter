@@ -109,7 +109,7 @@ if args.train in ['mixup', 'mixup_hidden']:
     exp_name += '_a_'+ str(args.mixup_alpha)
 exp_name += '_adv_mode_'+str(args.adv_mode)
 if args.random_start:
-    exp_name += '_rs_'
+    exp_name += '_rs'
 exp_name += '_ls_'+str(args.ls_factor)
 if args.job_id != None:
     exp_name += '_job_id_'+str(args.job_id)
