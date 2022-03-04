@@ -1,14 +1,13 @@
-import os
 import random
-import sys
 
 import numpy as np
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from utils import get_lambda, mixup_process, to_one_hot
+from utils import (get_lambda, mixup_process, per_image_standardization,
+                   to_one_hot)
+
 
 class PreActBlock(nn.Module):
     """Pre-activation version of the BasicBlock."""
@@ -98,10 +97,12 @@ class PreActResNet(nn.Module):
                  block,
                  num_blocks,
                  initial_channels,
-                 num_classes):
+                 num_classes,
+                 per_img_std=False):
         super(PreActResNet, self).__init__()
         self.in_planes = initial_channels
         self.num_classes = num_classes
+        self.per_img_std = per_img_std
 
         self.conv1 = nn.Conv2d(3,
                                initial_channels,
@@ -128,16 +129,6 @@ class PreActResNet(nn.Module):
         self.linear = nn.Linear(initial_channels * 8 * block.expansion,
                                 num_classes)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.bias.data.zero_()
-
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
@@ -159,7 +150,16 @@ class PreActResNet(nn.Module):
         out = self.layer2(out)
         return out
 
-    def forward(self, x, target=None, mixup=False, mixup_hidden=False, mixup_alpha=None):
+    def forward(self,
+                x,
+                target=None,
+                mixup=False,
+                mixup_hidden=False,
+                mixup_alpha=None):
+
+        if self.per_img_std:
+            x = per_image_standardization(x)
+
         if mixup_hidden:
             layer_mix = random.randint(0, 2)
         elif mixup:
@@ -169,7 +169,7 @@ class PreActResNet(nn.Module):
 
         out = x
 
-        if mixup_alpha is not None and mixup_alpha > 0.0:
+        if mixup_alpha is not None:
             lam = get_lambda(mixup_alpha)
             lam = torch.from_numpy(np.array([lam]).astype("float32")).cuda()
             lam = Variable(lam)
@@ -198,7 +198,6 @@ class PreActResNet(nn.Module):
                                                    lam=lam)
 
         out = self.layer3(out)
-
         if layer_mix == 3:
             out, target_reweighted = mixup_process(out,
                                                    target_reweighted,
@@ -207,11 +206,14 @@ class PreActResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
+        out = self.linear(out)
+
         if target is not None:
-            return self.linear(out), target_reweighted, out
+            return out, target_reweighted
         else:
-            return self.linear(out), out
+            return out
 
 
-def preactresnet18(num_classes=10, dropout=False):
-    return PreActResNet(PreActBlock, [2, 2, 2, 2], 64, num_classes)
+def preactresnet18(num_classes=10, dropout=False, per_img_std=False):
+    return PreActResNet(PreActBlock, [2, 2, 2, 2], 64, num_classes,
+                        per_img_std)
