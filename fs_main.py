@@ -113,6 +113,8 @@ exp_name += '_ls_'+str(args.ls_factor)
 if args.job_id != None:
     exp_name += '_job_id_'+str(args.job_id)
 args.model_dir = os.path.join(args.root_dir, exp_name)
+if not os.path.exists(args.model_dir):
+        os.makedirs(args.model_dir)
 log = open(os.path.join(args.model_dir, 'log.txt'.format(args.manualSeed)), 'w')
 print(exp_name)
 
