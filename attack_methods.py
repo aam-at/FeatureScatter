@@ -115,6 +115,8 @@ class Attack_FeaScatter(nn.Module):
         ) else config['box_type']
         self.ls_factor = 0.1 if 'ls_factor' not in config.keys(
         ) else config['ls_factor']
+        self.clip_min = config['clip_min']
+        self.clip_max = config['clip_max']
 
         print(config)
 
