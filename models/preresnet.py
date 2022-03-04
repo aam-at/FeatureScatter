@@ -206,12 +206,11 @@ class PreActResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out = self.linear(out)
 
         if target is not None:
-            return out, target_reweighted
+            return self.linear(out), out, target_reweighted
         else:
-            return out
+            return self.linear(out), out
 
 
 def preactresnet18(num_classes=10, dropout=False, per_img_std=False):
