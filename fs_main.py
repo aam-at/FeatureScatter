@@ -218,7 +218,7 @@ config_feature_scatter = {
     'step_size': 8.0 / 255,
     'random_start': args.random_start,
     'clip_min': 0.0,
-    'clip_max': 1.0
+    'clip_max': 255.0
 }
 
 if args.adv_mode.lower() == 'feature_scatter':
