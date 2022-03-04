@@ -84,7 +84,7 @@ parser.add_argument('--model', type=str, default='preactresnet18', help='model n
 parser.add_argument('--train',type=str, default='standard', choices=['standard', 'lamb', 'mixup', 'mixup_hidden'])
 parser.add_argument('--mixup_alpha', type=float, default=0.0, help='alpha parameter for mixup')
 parser.add_argument('--ls-factor', type=float, default=0.0, help='label smoothing factor')
-parser.add_argument('--random-start', type=bool, action='store_true', help='random start for the attack')
+parser.add_argument('--random-start', action='store_true', default=False, help='random start for the attack')
 
 # number of classes and image size will be updated below based on the dataset
 parser.add_argument('--num_classes', default=10, type=int, help='num classes')
