@@ -129,6 +129,24 @@ if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 's
 
 net = net.to(device)
 
+if device == 'cuda':
+    net = torch.nn.DataParallel(net)
+    cudnn.benchmark = True
+
+if args.resume and args.init_model_pass != '-1':
+    # Load checkpoint.
+    print_log('==> Resuming from checkpoint..', log)
+    f_path = os.path.join(args.model_dir,
+                            ('checkpoint-%s' % args.init_model_pass))
+    if not os.path.isdir(args.model_dir):
+        print_log('train from scratch: no checkpoint directory or file found', log)
+    elif os.path.isfile(f_path):
+        checkpoint = torch.load(f_path)
+        net.load_state_dict(checkpoint['net'])
+        print_log(f"resuming from '{args.init_model_pass}' checkpoint", log)
+    elif not os.path.isfile(f_path):
+        print_log('train from scratch: no checkpoint directory or file found', log)
+
 # configs
 config_natural = {'train': False}
 
@@ -159,7 +177,7 @@ config_cw = {
 }
 
 
-def test(epoch, net, attack):
+def test(net, attack):
     net.eval()
     test_loss = 0
     correct = 0
@@ -170,15 +188,14 @@ def test(epoch, net, attack):
         start_time = time.time()
         inputs, targets = inputs.to(device), targets.to(device)
 
+        #attack
         pert_inputs = attack(inputs, targets).detach()
-
-        pert_outputs, _ = net(pert_inputs, targets)
-
+        # compute accuracy and loss
+        pert_outputs = net(pert_inputs, targets)[0]
         loss = criterion(pert_outputs, targets)
         test_loss += loss.item()
 
         duration = time.time() - start_time
-
         _, predicted = pert_outputs.max(1)
         batch_size = targets.size(0)
         total += batch_size
@@ -222,24 +239,6 @@ for attack_idx in range(attack_num):
             'Should be a valid attack method. The specified attack method is: {}'
             .format(args.attack_method))
 
-    if device == 'cuda':
-        net = torch.nn.DataParallel(net)
-        cudnn.benchmark = True
-
-    if args.resume and args.init_model_pass != '-1':
-        # Load checkpoint.
-        print_log('==> Resuming from checkpoint..', log)
-        f_path = os.path.join(args.model_dir,
-                              ('checkpoint-%s' % args.init_model_pass))
-        if not os.path.isdir(args.model_dir):
-            print_log('train from scratch: no checkpoint directory or file found', log)
-        elif os.path.isfile(f_path):
-            checkpoint = torch.load(f_path)
-            net.load_state_dict(checkpoint['net'])
-            print_log(f"resuming from '{args.init_model_pass}' checkpoint", log)
-        elif not os.path.isfile(f_path):
-            print_log('train from scratch: no checkpoint directory or file found', log)
-
     criterion = nn.CrossEntropyLoss()
 
-    test(0, net)
+    test(net, attack)
