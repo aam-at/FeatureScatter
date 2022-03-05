@@ -211,7 +211,8 @@ def test(net, attack):
                    100. * correct / total, test_loss / total), log)
 
     acc = 100. * correct / total
-    print_log('Val acc:', acc, log)
+    test_loss = test_loss / total
+    print_log(f"Val acc: {acc}; val loss: {test_loss}", log)
     return acc
 
 
