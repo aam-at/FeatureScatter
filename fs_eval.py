@@ -229,23 +229,15 @@ for attack_idx in range(attack_num):
     if args.resume and args.init_model_pass != '-1':
         # Load checkpoint.
         print_log('==> Resuming from checkpoint..', log)
-        f_path_latest = os.path.join(args.model_dir, 'latest')
         f_path = os.path.join(args.model_dir,
                               ('checkpoint-%s' % args.init_model_pass))
         if not os.path.isdir(args.model_dir):
             print_log('train from scratch: no checkpoint directory or file found', log)
-        elif args.init_model_pass == 'latest' and os.path.isfile(
-                f_path_latest):
-            checkpoint = torch.load(f_path_latest)
-            net.load_state_dict(checkpoint['net'])
-            start_epoch = checkpoint['epoch']
-            print_log('resuming from epoch %s in latest' % start_epoch, log)
         elif os.path.isfile(f_path):
             checkpoint = torch.load(f_path)
             net.load_state_dict(checkpoint['net'])
-            start_epoch = checkpoint['epoch']
-            print_log('resuming from epoch %s' % start_epoch, log)
-        elif not os.path.isfile(f_path) or not os.path.isfile(f_path_latest):
+            print_log(f"resuming from '{args.init_model_pass}' checkpoint", log)
+        elif not os.path.isfile(f_path):
             print_log('train from scratch: no checkpoint directory or file found', log)
 
     criterion = nn.CrossEntropyLoss()
