@@ -65,7 +65,7 @@ def print_log(print_string, log):
     log.write('{}\n'.format(print_string))
     log.flush()
 
-log = open(os.path.join(args.model_dir, 'log.txt'), 'w')
+log = open(os.path.join(args.model_dir, 'log_test.txt'), 'w')
 
 if args.dataset == 'cifar10':
     print_log('------------cifar10---------', log)
