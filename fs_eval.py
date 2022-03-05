@@ -56,6 +56,7 @@ parser.add_argument('--batch_size_test',
                     type=int,
                     help='batch size for testing')
 parser.add_argument('--image_size', default=32, type=int, help='image size')
+parser.add_argument('--model', type=str, default='preactresnet18', help='model name', choices=['wrn28_10', 'preactresnet18'])
 
 args = parser.parse_args()
 
@@ -203,20 +204,17 @@ attack_num = len(attack_list)
 for attack_idx in range(attack_num):
 
     args.attack_method = attack_list[attack_idx].upper()
+    print_log(f"-----{args.attack_method} adv mode -----", log)
 
-    if args.attack_method == 'natural':
-        print_log('-----natural non-adv mode -----', log)
+    if args.attack_method == 'NATURAL':
         # config is only dummy, not actually used
         attack = Attack_None(net, config_natural)
     elif args.attack_method == 'FGSM':
-        print_log('-----FGSM adv mode -----', log)
         attack = Attack_PGD(net, config_fgsm)
     elif args.attack_method.startswith('PGD'):
-        print_log('-----PGD adv mode -----', log)
         num_steps = int(args.attack_method.replace('PGD', ''))
         attack = Attack_PGD(net, config_pgd.update({'num_steps': num_steps}))
     elif args.attack_method.startswith('CW'):
-        print_log('-----CW adv mode -----', log)
         num_steps = int(args.attack_method.replace('CW', ''))
         attack = Attack_PGD(net, config_cw.update({'num_steps': num_steps}))
     else:
