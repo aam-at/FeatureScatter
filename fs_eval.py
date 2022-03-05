@@ -148,7 +148,7 @@ if args.resume and args.init_model_pass != '-1':
         print_log('train from scratch: no checkpoint directory or file found', log)
 
 # configs
-config_natural = {'train': False}
+config_natural = {}
 
 config_fgsm = {
     'targeted': False,
@@ -183,9 +183,9 @@ def test(net, attack):
     correct = 0
     total = 0
 
+    start_time = time.time()
     iterator = tqdm(testloader, ncols=0, leave=False)
     for batch_idx, (inputs, targets) in enumerate(iterator):
-        start_time = time.time()
         inputs, targets = inputs.to(device), targets.to(device)
 
         #attack
@@ -195,7 +195,6 @@ def test(net, attack):
         loss = criterion(pert_outputs, targets)
         test_loss += loss.item()
 
-        duration = time.time() - start_time
         _, predicted = pert_outputs.max(1)
         batch_size = targets.size(0)
         total += batch_size
@@ -204,16 +203,10 @@ def test(net, attack):
         iterator.set_description(
             str(predicted.eq(targets).sum().item() / targets.size(0)))
 
-        if batch_idx % args.log_step == 0:
-            print_log(
-                "step %d, duration %.2f, test  acc %.2f, avg-acc %.2f, loss %.2f"
-                % (batch_idx, duration, 100. * correct_num / batch_size,
-                   100. * correct / total, test_loss / total), log)
-
+    duration = time.time() - start_time
     acc = 100. * correct / total
     test_loss = test_loss / total
-    print_log(f"Val acc: {acc}; val loss: {test_loss}", log)
-    return acc
+    print_log(f"Acc: {acc}; loss: {test_loss}; duration: {duration}s", log)
 
 
 attack_list = args.attack_method_list.split('-')
