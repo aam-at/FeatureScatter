@@ -155,7 +155,9 @@ config_fgsm = {
     'epsilon': 8.0,
     'num_steps': 1,
     'step_size': 8.0,
-    'random_start': False
+    'random_start': False,
+    'clip_min': 0.0,
+    'clip_max': 255.0
 }
 
 config_pgd = {
@@ -164,7 +166,9 @@ config_pgd = {
     'num_steps': 20,
     'step_size': 2.0,
     'random_start': False,
-    'loss_func': torch.nn.CrossEntropyLoss(reduction='none')
+    'loss_func': torch.nn.CrossEntropyLoss(reduction='none'),
+    'clip_min': 0.0,
+    'clip_max': 255.0
 }
 
 config_cw = {
@@ -173,7 +177,9 @@ config_cw = {
     'num_steps': 20,
     'step_size': 2.0,
     'random_start': False,
-    'loss_func': CWLoss(args.num_classes)
+    'loss_func': CWLoss(args.num_classes),
+    'clip_min': 0.0,
+    'clip_max': 255.0
 }
 
 
