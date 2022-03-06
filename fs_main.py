@@ -25,7 +25,7 @@ from models import *
 import utils
 from utils import softCrossEntropy
 from utils import one_hot_tensor
-from attack_methods import Attack_FeaScatter
+from attack_methods import Attack_FeaScatter, Attack_PGD
 
 torch.set_printoptions(threshold=10000)
 np.set_printoptions(threshold=np.inf)
@@ -43,7 +43,7 @@ parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--adv_mode',
                     default='feature_scatter',
                     type=str,
-                    help='adv_mode (feature_scatter)')
+                    help='adv_mode (feature_scatter, pgd)')
 parser.add_argument('--data_dir', type=str, help='path where to store the data')
 parser.add_argument('--root_dir', type=str, help='folder to store results')
 parser.add_argument('--init_model_pass',
@@ -220,9 +220,21 @@ config_feature_scatter = {
     'clip_max': 255.0
 }
 
+config_pgd = {
+    'epsilon': 8.0,
+    'num_steps': 7,
+    'step_size': 2.0,
+    'random_start': args.random_start,
+    'clip_min': 0.0,
+    'clip_max': 255.0
+}
+
 if args.adv_mode.lower() == 'feature_scatter':
     print_log('-----Feature Scatter mode -----', log)
     attack = Attack_FeaScatter(net, config_feature_scatter)
+elif args.adv_mode.lower() == 'pgd':
+    print_log('-----PGD mode -----', log)
+    attack = Attack_PGD(net, config_pgd)
 else:
     print_log('-----OTHER_ALGO mode -----', log)
     raise NotImplementedError("Please implement this algorithm first!")

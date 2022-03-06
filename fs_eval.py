@@ -135,9 +135,9 @@ if device == 'cuda':
 
 if args.resume and args.init_model_pass != '-1':
     # Load checkpoint.
-    print_log('==> Resuming from checkpoint..', log)
     f_path = os.path.join(args.model_dir,
-                            ('checkpoint-%s' % args.init_model_pass))
+                          ('checkpoint-%s' % args.init_model_pass))
+    print_log(f"==> Resuming from checkpoint {f_path}", log)
     if not os.path.isdir(args.model_dir):
         print_log('train from scratch: no checkpoint directory or file found', log)
     elif os.path.isfile(f_path):
@@ -212,7 +212,7 @@ def test(net, attack):
     duration = time.time() - start_time
     acc = 100. * correct / total
     test_loss = test_loss / total
-    print_log(f"Acc: {acc}; loss: {test_loss}; duration: {duration}s", log)
+    print_log(f"Acc: {acc}; loss: {test_loss:.6f}; duration: {duration:.2f}s", log)
 
 
 attack_list = args.attack_method_list.split('-')
@@ -230,10 +230,14 @@ for attack_idx in range(attack_num):
         attack = Attack_PGD(net, config_fgsm)
     elif args.attack_method.startswith('PGD'):
         num_steps = int(args.attack_method.replace('PGD', ''))
-        attack = Attack_PGD(net, config_pgd.update({'num_steps': num_steps}))
+        cfg = config_pgd.copy()
+        cfg.update({'num_steps': num_steps})
+        attack = Attack_PGD(net, cfg)
     elif args.attack_method.startswith('CW'):
         num_steps = int(args.attack_method.replace('CW', ''))
-        attack = Attack_PGD(net, config_cw.update({'num_steps': num_steps}))
+        cfg = config_cw.copy()
+        cfg.update({'num_steps': num_steps})
+        attack = Attack_PGD(net, cfg)
     else:
         raise Exception(
             'Should be a valid attack method. The specified attack method is: {}'
