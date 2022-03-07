@@ -3,6 +3,7 @@ from __future__ import print_function
 import time
 import numpy as np
 import random
+from load_data import load_data
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,7 +12,6 @@ import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
 
-from torch.autograd.gradcheck import zero_gradients
 import copy
 from torch.autograd import Variable
 from PIL import Image
@@ -46,6 +46,7 @@ parser.add_argument('--adv_mode',
                     type=str,
                     help='adv_mode (feature_scatter)')
 parser.add_argument('--model_dir', type=str, help='model path')
+parser.add_argument('--data_dir', type=str, help='data path')
 parser.add_argument('--init_model_pass',
                     default='-1',
                     type=str,
@@ -54,7 +55,7 @@ parser.add_argument('--max_epoch',
                     default=200,
                     type=int,
                     help='max number of epochs')
-parser.add_argument('--save_epochs', default=100, type=int, help='save period')
+parser.add_argument('--save_epochs', default=10, type=int, help='save period')
 parser.add_argument('--decay_epoch1',
                     default=60,
                     type=int,
@@ -79,26 +80,37 @@ parser.add_argument('--weight_decay',
                     default=2e-4,
                     type=float,
                     help='weight decay')
-parser.add_argument('--log_step', default=10, type=int, help='log_step')
+parser.add_argument('--log_step', default=100, type=int, help='log_step')
 
 # number of classes and image size will be updated below based on the dataset
 parser.add_argument('--num_classes', default=10, type=int, help='num classes')
 parser.add_argument('--image_size', default=32, type=int, help='image size')
 parser.add_argument('--dataset', default='cifar10', type=str,
                     help='dataset')  # concat cascade
+parser.add_argument('--model', default='preactresnet18', type=str, choices=['preactresnet18', 'wrn28_10'],
+                    help='dataset')  # concat cascade
+parser.add_argument('--ls_factor', default=0.5, type=float, help='label smoothing factor')
+parser.add_argument('--random_start', action='store_true', help='random start?')
 
 args = parser.parse_args()
+log = open(os.path.join(args.model_dir, 'log.txt'), 'w')
+
+def print_log(print_string, log):
+    print("{}".format(print_string))
+    log.write('{}\n'.format(print_string))
+    log.flush()
+
 
 if args.dataset == 'cifar10':
-    print('------------cifar10---------')
+    print_log('------------cifar10---------', log)
     args.num_classes = 10
     args.image_size = 32
 elif args.dataset == 'cifar100':
-    print('----------cifar100---------')
+    print_log('----------cifar100---------', log)
     args.num_classes = 100
     args.image_size = 32
 if args.dataset == 'svhn':
-    print('------------svhn10---------')
+    print_log('------------svhn10---------', log)
     args.num_classes = 10
     args.image_size = 32
 
@@ -106,75 +118,18 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 start_epoch = 0
 
 # Data
-print('==> Preparing data..')
-
-if args.dataset == 'cifar10' or args.dataset == 'cifar100':
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1 1]
-    ])
-
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1 1]
-    ])
-elif args.dataset == 'svhn':
-    transform_train = transforms.Compose([
-        # transforms.RandomCrop(32, padding=4),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1 1]
-    ])
-
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1 1]
-    ])
-
-if args.dataset == 'cifar10':
-    trainset = torchvision.datasets.CIFAR10(root='./data',
-                                            train=True,
-                                            download=True,
-                                            transform=transform_train)
-    testset = torchvision.datasets.CIFAR10(root='./data',
-                                           train=False,
-                                           download=True,
-                                           transform=transform_test)
-    classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse',
-               'ship', 'truck')
-elif args.dataset == 'cifar100':
-    trainset = torchvision.datasets.CIFAR100(root='./data',
-                                             train=True,
-                                             download=True,
-                                             transform=transform_train)
-    testset = torchvision.datasets.CIFAR100(root='./data',
-                                            train=False,
-                                            download=True,
-                                            transform=transform_test)
-
-elif args.dataset == 'svhn':
-    trainset = torchvision.datasets.SVHN(root='./data',
-                                         split='train',
-                                         download=True,
-                                         transform=transform_train)
-    testset = torchvision.datasets.SVHN(root='./data',
-                                        split='test',
-                                        download=True,
-                                        transform=transform_test)
-
-trainloader = torch.utils.data.DataLoader(trainset,
-                                          batch_size=args.batch_size_train,
-                                          shuffle=True,
-                                          num_workers=2)
-
-print('==> Building model..')
+print_log('==> Preparing data..', log)
+trainloader, _, _, _, num_classes = load_data(args.batch_size_train, 2, args.dataset, args.data_dir, valid_labels_per_class=0)
+print_log('==> Building model..', log)
 
 if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 'svhn':
-    print('---wide resenet-----')
-    basic_net = WideResNet(depth=28,
-                           num_classes=args.num_classes,
-                           widen_factor=10)
+    print_log(f"---{args.model}-----", log)
+    if args.model.lower() == 'preactresnet18':
+        basic_net = preactresnet18(num_classes=args.num_classes, per_img_std=True)
+    elif args.model.lower() == 'wrn28_10':
+        basic_net = wrn28_10(num_classes=args.num_classes, per_img_std=True)
+    else:
+        raise ValueError('model not supported')
 
 
 def print_para(net):
@@ -190,18 +145,19 @@ basic_net = basic_net.to(device)
 # config for feature scatter
 config_feature_scatter = {
     'train': True,
-    'epsilon': 8.0 / 255 * 2,
+    'epsilon': 8.0,
     'num_steps': 1,
-    'step_size': 8.0 / 255 * 2,
-    'random_start': True,
-    'ls_factor': 0.5,
+    'step_size': 8.0,
+    'random_start': args.random_start,
+    'ls_factor': args.ls_factor,
 }
 
 if args.adv_mode.lower() == 'feature_scatter':
-    print('-----Feature Scatter mode -----')
+    print_log('-----Feature Scatter mode -----', log)
+    print_log(config_feature_scatter, log)
     net = Attack_FeaScatter(basic_net, config_feature_scatter)
 else:
-    print('-----OTHER_ALGO mode -----')
+    print_log('-----OTHER_ALGO mode -----', log)
     raise NotImplementedError("Please implement this algorithm first!")
 
 if device == 'cuda':
@@ -215,30 +171,31 @@ optimizer = optim.SGD(net.parameters(),
 
 if args.resume and args.init_model_pass != '-1':
     # Load checkpoint.
-    print('==> Resuming from checkpoint..')
+    print_log('==> Resuming from checkpoint..', log)
     f_path_latest = os.path.join(args.model_dir, 'latest')
     f_path = os.path.join(args.model_dir,
                           ('checkpoint-%s' % args.init_model_pass))
     if not os.path.isdir(args.model_dir):
-        print('train from scratch: no checkpoint directory or file found')
+        print_log('train from scratch: no checkpoint directory or file found', log)
+        exit(0)
     elif args.init_model_pass == 'latest' and os.path.isfile(f_path_latest):
         checkpoint = torch.load(f_path_latest)
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch'] + 1
-        print('resuming from epoch %s in latest' % start_epoch)
+        print_log('resuming from epoch %s in latest' % start_epoch, log)
     elif os.path.isfile(f_path):
         checkpoint = torch.load(f_path)
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch'] + 1
-        print('resuming from epoch %s' % (start_epoch - 1))
+        print_log('resuming from epoch %s' % (start_epoch - 1), log)
     elif not os.path.isfile(f_path) or not os.path.isfile(f_path_latest):
-        print('train from scratch: no checkpoint directory or file found')
+        print_log('train from scratch: no checkpoint directory or file found', log)
 
 soft_xent_loss = softCrossEntropy()
 
 
 def train_fun(epoch, net):
-    print('\nEpoch: %d' % epoch)
+    print_log('\nEpoch: %d' % epoch, log)
     net.train()
 
     train_loss = 0
@@ -277,27 +234,29 @@ def train_fun(epoch, net):
         optimizer.zero_grad()
         loss = loss_fs.mean()
         loss.backward()
+        if torch.isnan(loss):
+            print_log("\nnan loss!!!", log)
+            exit(0)
 
         optimizer.step()
 
         train_loss = loss.item()
+        iterator.set_description(f"{train_loss:.2f}")
 
         duration = time.time() - start_time
         if batch_idx % args.log_step == 0:
             if adv_acc == 0:
                 adv_acc = get_acc(outputs, targets)
-            iterator.set_description(str(adv_acc))
 
             nat_outputs, _ = net(inputs, targets, attack=False)
             nat_acc = get_acc(nat_outputs, targets)
-
-            print(
+            print_log(
                 "epoch %d, step %d, lr %.4f, duration %.2f, training nat acc %.2f, training adv acc %.2f, training adv loss %.4f"
                 % (epoch, batch_idx, lr, duration, 100 * nat_acc,
-                   100 * adv_acc, train_loss))
+                   100 * adv_acc, train_loss), log)
 
     if epoch % args.save_epochs == 0 or epoch >= args.max_epoch - 2:
-        print('Saving..')
+        print_log('Saving..', log)
         f_path = os.path.join(args.model_dir, ('checkpoint-%s' % epoch))
         state = {
             'net': net.state_dict(),
@@ -308,7 +267,7 @@ def train_fun(epoch, net):
         torch.save(state, f_path)
 
     if epoch >= 0:
-        print('Saving latest @ epoch %s..' % (epoch))
+        print_log('Saving latest @ epoch %s..' % (epoch), log)
         f_path = os.path.join(args.model_dir, 'latest')
         state = {
             'net': net.state_dict(),

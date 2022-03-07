@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models import *
-from torch.autograd.gradcheck import zero_gradients
 from torch.autograd import Variable
 import utils
 import math
@@ -90,8 +89,8 @@ class Attack_PGD(nn.Module):
 
         for i in range(self.num_steps):
             x.requires_grad_()
-            zero_gradients(x)
             if x.grad is not None:
+                x.grad.detach()
                 x.grad.data.fill_(0)
             aux_net.eval()
             logits = aux_net(x)[0]
@@ -104,7 +103,7 @@ class Attack_PGD(nn.Module):
                 x.grad.data)
             x_adv = torch.min(torch.max(x_adv, inputs - self.epsilon),
                               inputs + self.epsilon)
-            x_adv = torch.clamp(x_adv, -1.0, 1.0)
+            x_adv = torch.clamp(x_adv, 0.0, 255.0)
             x = Variable(x_adv)
 
         if self.train_flag:
@@ -167,7 +166,8 @@ class Attack_FeaScatter(nn.Module):
         x = inputs.detach()
 
         x_org = x.detach()
-        x = x + torch.zeros_like(x).uniform_(-self.epsilon, self.epsilon)
+        if self.rand:
+            x = x + torch.zeros_like(x).uniform_(-self.epsilon, self.epsilon)
 
         if self.train_flag:
             self.basic_net.train()
@@ -185,8 +185,8 @@ class Attack_FeaScatter(nn.Module):
 
         for i in range(iter_num):
             x.requires_grad_()
-            zero_gradients(x)
             if x.grad is not None:
+                x.grad.detach()
                 x.grad.data.fill_(0)
 
             logits_pred, fea = aux_net(x)
@@ -201,7 +201,7 @@ class Attack_FeaScatter(nn.Module):
             x_adv = x.data + self.step_size * torch.sign(x.grad.data)
             x_adv = torch.min(torch.max(x_adv, inputs - self.epsilon),
                               inputs + self.epsilon)
-            x_adv = torch.clamp(x_adv, -1.0, 1.0)
+            x_adv = torch.clamp(x_adv, 0.0, 255.0)
             x = Variable(x_adv)
 
             logits_pred, fea = self.basic_net(x)
@@ -210,5 +210,70 @@ class Attack_FeaScatter(nn.Module):
             y_sm = utils.label_smoothing(y_gt, y_gt.size(1), self.ls_factor)
 
             adv_loss = loss_ce(logits_pred, y_sm.detach())
+
+        return logits_pred, adv_loss
+
+
+class Attack_Auto(nn.Module):
+    def __init__(self, basic_net, config, attack_net=None):
+        super(Attack_Auto, self).__init__()
+        self.basic_net = basic_net
+        self.attack_net = attack_net
+        self.norm = config['norm']
+        self.epsilon = config['epsilon']
+        self.train_flag = True if 'train' not in config.keys(
+        ) else config['train']
+        self.box_type = 'white' if 'box_type' not in config.keys(
+        ) else config['box_type']
+        self.log_path = config['log_path']
+        self.version = config['version']
+
+        from autoattack import AutoAttack
+        self.auto_attack = AutoAttack(lambda x: basic_net(x * 255.0)[0],
+                                      norm=self.norm,
+                                      eps=self.epsilon,
+                                      verbose=False,
+                                      version=self.version,
+                                      log_path=self.log_path)
+
+        print(config)
+
+    def forward(self,
+                inputs,
+                targets,
+                attack=True,
+                targeted_label=-1,
+                batch_idx=0):
+
+        if not attack:
+            outputs, _ = self.basic_net(inputs)
+            return outputs, None
+        if self.box_type == 'white':
+            aux_net = pickle.loads(pickle.dumps(self.basic_net))
+        elif self.box_type == 'black':
+            assert self.attack_net is not None, "should provide an additional net in black-box case"
+            aux_net = pickle.loads(pickle.dumps(self.basic_net))
+
+        aux_net.eval()
+        batch_size = inputs.size(0)
+        logits_pred_nat, _ = self.basic_net(inputs)
+        num_classes = logits_pred_nat.size(1)
+        y_gt = one_hot_tensor(targets, num_classes, device)
+
+        if self.train_flag:
+            self.basic_net.train()
+        else:
+            self.basic_net.eval()
+
+        x_adv = 255.0 * self.auto_attack.run_standard_evaluation(inputs / 255.0,
+                                                                 targets,
+                                                                 bs=batch_size)
+        assert x_adv.max() <= 255.0
+        assert x_adv.min() >= 0.0
+        assert torch.abs(x_adv - inputs).max() <= self.epsilon * 255.0 + 1e-4
+
+        loss_ce = softCrossEntropy()
+        logits_pred, fea = self.basic_net(x_adv)
+        adv_loss = loss_ce(logits_pred, y_gt.detach())
 
         return logits_pred, adv_loss

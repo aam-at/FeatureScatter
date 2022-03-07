@@ -1,5 +1,6 @@
 from __future__ import print_function
 import time
+from load_data import load_data
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,7 +19,7 @@ from tqdm import tqdm
 from models import *
 import utils
 
-from attack_methods import Attack_None, Attack_PGD
+from attack_methods import Attack_None, Attack_PGD, Attack_Auto
 
 from utils import softCrossEntropy, CWLoss
 
@@ -33,6 +34,7 @@ parser.add_argument('--resume',
                     help='resume from checkpoint')
 parser.add_argument('--attack', default=True, type='bool', help='attack')
 parser.add_argument('--model_dir', type=str, help='model path')
+parser.add_argument('--data_dir', type=str, help='data path')
 parser.add_argument('--init_model_pass',
                     default='-1',
                     type=str,
@@ -50,76 +52,53 @@ parser.add_argument('--log_step', default=7, type=int, help='log_step')
 parser.add_argument('--num_classes', default=10, type=int, help='num classes')
 parser.add_argument('--dataset', default='cifar10', type=str,
                     help='dataset')  # concat cascade
+parser.add_argument('--model', default='preactresnet18', type=str, choices=['preactresnet18', 'wrn28_10'],
+                    help='dataset')  # concat cascade
 parser.add_argument('--batch_size_test',
                     default=100,
                     type=int,
                     help='batch size for testing')
 parser.add_argument('--image_size', default=32, type=int, help='image size')
+parser.add_argument('--random_start', action='store_true', help='random start?')
 
 args = parser.parse_args()
+log = open(os.path.join(args.model_dir, 'log_test.txt'), 'w')
+
+def print_log(print_string, log):
+    print("{}".format(print_string))
+    log.write('{}\n'.format(print_string))
+    log.flush()
 
 if args.dataset == 'cifar10':
-    print('------------cifar10---------')
+    print_log('------------cifar10---------', log)
     args.num_classes = 10
     args.image_size = 32
 elif args.dataset == 'cifar100':
-    print('----------cifar100---------')
+    print_log('----------cifar100---------', log)
     args.num_classes = 100
     args.image_size = 32
 if args.dataset == 'svhn':
-    print('------------svhn10---------')
+    print_log('------------svhn10---------', log)
     args.num_classes = 10
     args.image_size = 32
-elif args.dataset == 'mnist':
-    print('----------mnist---------')
-    args.num_classes = 10
-    args.image_size = 28
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 start_epoch = 0
 
 # Data
-print('==> Preparing data..')
+print_log('==> Preparing data..', log)
+_, _, _, testloader, num_classes = load_data(args.batch_size_test, 2, args.dataset,
+                                             args.data_dir, valid_labels_per_class=0)
 
-if args.dataset == 'cifar10' or args.dataset == 'cifar100':
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1 1]
-    ])
-elif args.dataset == 'svhn':
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # [-1 1]
-    ])
-
-if args.dataset == 'cifar10':
-    testset = torchvision.datasets.CIFAR10(root='./data',
-                                           train=False,
-                                           download=True,
-                                           transform=transform_test)
-elif args.dataset == 'cifar100':
-    testset = torchvision.datasets.CIFAR100(root='./data',
-                                            train=False,
-                                            download=True,
-                                            transform=transform_test)
-
-elif args.dataset == 'svhn':
-    testset = torchvision.datasets.SVHN(root='./data',
-                                        split='test',
-                                        download=True,
-                                        transform=transform_test)
-
-testloader = torch.utils.data.DataLoader(testset,
-                                         batch_size=args.batch_size_test,
-                                         shuffle=False,
-                                         num_workers=2)
-
-print('==> Building model..')
+print_log('==> Building model..', log)
 if args.dataset == 'cifar10' or args.dataset == 'cifar100' or args.dataset == 'svhn':
-    print('---wide resenet-----')
-    basic_net = WideResNet(depth=28,
-                           num_classes=args.num_classes,
-                           widen_factor=10)
+    print_log(f"---{args.model}-----", log)
+    if args.model.lower() == 'preactresnet18':
+        basic_net = preactresnet18(num_classes=args.num_classes, per_img_std=True)
+    elif args.model.lower() == 'wrn28_10':
+        basic_net = wrn28_10(num_classes=args.num_classes, per_img_std=True)
+    else:
+        raise ValueError('model not supported')
 
 basic_net = basic_net.to(device)
 
@@ -129,30 +108,38 @@ config_natural = {'train': False}
 config_fgsm = {
     'train': False,
     'targeted': False,
-    'epsilon': 8.0 / 255 * 2,
+    'epsilon': 8.0,
     'num_steps': 1,
-    'step_size': 8.0 / 255 * 2,
-    'random_start': True
+    'step_size': 8.0,
+    'random_start': args.random_start
 }
 
 config_pgd = {
     'train': False,
     'targeted': False,
-    'epsilon': 8.0 / 255 * 2,
+    'epsilon': 8.0,
     'num_steps': 20,
-    'step_size': 2.0 / 255 * 2,
-    'random_start': True,
+    'step_size': 2.0,
+    'random_start': args.random_start,
     'loss_func': torch.nn.CrossEntropyLoss(reduction='none')
 }
 
 config_cw = {
     'train': False,
     'targeted': False,
-    'epsilon': 8.0 / 255 * 2,
+    'epsilon': 8.0,
     'num_steps': 20,
-    'step_size': 2.0 / 255 * 2,
-    'random_start': True,
+    'step_size': 2.0,
+    'random_start': args.random_start,
     'loss_func': CWLoss(args.num_classes)
+}
+
+config_auto = {
+    'train': False,
+    'targeted': False,
+    'norm': 'Linf',
+    'epsilon': 8.0 / 255.0,
+    'version': 'standard'
 }
 
 
@@ -184,14 +171,8 @@ def test(epoch, net):
         iterator.set_description(
             str(predicted.eq(targets).sum().item() / targets.size(0)))
 
-        if batch_idx % args.log_step == 0:
-            print(
-                "step %d, duration %.2f, test  acc %.2f, avg-acc %.2f, loss %.2f"
-                % (batch_idx, duration, 100. * correct_num / batch_size,
-                   100. * correct / total, test_loss / total))
-
     acc = 100. * correct / total
-    print('Val acc:', acc)
+    print_log(f"Accuracy: {acc}", log)
     return acc
 
 
@@ -200,25 +181,29 @@ attack_num = len(attack_list)
 
 for attack_idx in range(attack_num):
 
-    args.attack_method = attack_list[attack_idx]
+    attack_method = attack_list[attack_idx].upper()
+    print_log(f"-----{attack_method} mode -----", log)
 
-    if args.attack_method == 'natural':
-        print('-----natural non-adv mode -----')
+    if attack_method == 'NATURAL':
         # config is only dummy, not actually used
         net = Attack_None(basic_net, config_natural)
-    elif args.attack_method.upper() == 'FGSM':
-        print('-----FGSM adv mode -----')
+    elif attack_method == 'FGSM':
         net = Attack_PGD(basic_net, config_fgsm)
-    elif args.attack_method.upper() == 'PGD':
-        print('-----PGD adv mode -----')
+    elif attack_method.startswith('PGD'):
+        num_steps = int(attack_method.replace('PGD', ''))
+        config_pgd['num_steps'] = num_steps
         net = Attack_PGD(basic_net, config_pgd)
-    elif args.attack_method.upper() == 'CW':
-        print('-----CW adv mode -----')
+    elif attack_method.startswith('CW'):
+        num_steps = int(attack_method.replace('CW', ''))
+        config_cw['num_steps'] = num_steps
         net = Attack_PGD(basic_net, config_cw)
+    elif attack_method == 'AUTO':
+        config_auto['log_path'] = os.path.join(args.model_dir, 'log_auto.txt')
+        net = Attack_Auto(basic_net, config_auto)
     else:
         raise Exception(
             'Should be a valid attack method. The specified attack method is: {}'
-            .format(args.attack_method))
+            .format(attack_method))
 
     if device == 'cuda':
         net = torch.nn.DataParallel(net)
@@ -226,25 +211,26 @@ for attack_idx in range(attack_num):
 
     if args.resume and args.init_model_pass != '-1':
         # Load checkpoint.
-        print('==> Resuming from checkpoint..')
+        print_log('==> Resuming from checkpoint..', log)
+        print_log('model_dir is %s' % args.model_dir, log)
         f_path_latest = os.path.join(args.model_dir, 'latest')
         f_path = os.path.join(args.model_dir,
                               ('checkpoint-%s' % args.init_model_pass))
         if not os.path.isdir(args.model_dir):
-            print('train from scratch: no checkpoint directory or file found')
+            print_log('train from scratch: no checkpoint directory found', log)
+            exit(0)
         elif args.init_model_pass == 'latest' and os.path.isfile(
                 f_path_latest):
             checkpoint = torch.load(f_path_latest)
             net.load_state_dict(checkpoint['net'])
-            start_epoch = checkpoint['epoch']
-            print('resuming from epoch %s in latest' % start_epoch)
+            print_log('resuming from %s' % args.init_model_pass, log)
         elif os.path.isfile(f_path):
             checkpoint = torch.load(f_path)
             net.load_state_dict(checkpoint['net'])
-            start_epoch = checkpoint['epoch']
-            print('resuming from epoch %s' % start_epoch)
+            print_log('resuming from %s' % args.init_model_pass, log)
         elif not os.path.isfile(f_path) or not os.path.isfile(f_path_latest):
-            print('train from scratch: no checkpoint directory or file found')
+            print('train from scratch: no checkpoint file found')
+            exit(0)
 
     criterion = nn.CrossEntropyLoss()
 
